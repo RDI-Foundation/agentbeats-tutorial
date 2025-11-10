@@ -1,0 +1,103 @@
+{
+  "green_agents": [
+    {
+      "team": {
+        "team_id": "team_alpha",
+        "team_name": "Team Alpha",
+        "members": ["alice@example.com", "bob@example.com"]
+      },
+      "agent_type": "green",
+      "agent_url": "https://team-alpha-green.example.com",
+      "agent_name": "Alpha Red Team",
+      "metadata": {
+        "submission_time": "2024-01-15T10:00:00Z"
+      }
+    },
+    {
+      "team": {
+        "team_id": "team_beta",
+        "team_name": "Team Beta",
+        "members": ["charlie@example.com"]
+      },
+      "agent_type": "green",
+      "agent_url": "https://team-beta-green.example.com",
+      "agent_name": "Beta Attackers",
+      "metadata": {
+        "submission_time": "2024-01-15T11:00:00Z"
+      }
+    },
+    {
+      "team": {
+        "team_id": "organizer_holdout_1",
+        "team_name": "Organizer Holdout Green #1",
+        "members": ["organizer@example.com"]
+      },
+      "agent_type": "green",
+      "agent_url": "https://holdout-green-1.example.com",
+      "agent_name": "Holdout Attacker 1",
+      "metadata": {
+        "holdout": true
+      }
+    }
+  ],
+  "purple_agents": [
+    {
+      "team": {
+        "team_id": "team_alpha",
+        "team_name": "Team Alpha",
+        "members": ["alice@example.com", "bob@example.com"]
+      },
+      "agent_type": "purple",
+      "agent_url": "https://team-alpha-purple.example.com",
+      "agent_name": "Alpha Defender",
+      "metadata": {
+        "submission_time": "2024-01-15T10:00:00Z"
+      }
+    },
+    {
+      "team": {
+        "team_id": "team_beta",
+        "team_name": "Team Beta",
+        "members": ["charlie@example.com"]
+      },
+      "agent_type": "purple",
+      "agent_url": "https://team-beta-purple.example.com",
+      "agent_name": "Beta Shield",
+      "metadata": {
+        "submission_time": "2024-01-15T11:00:00Z"
+      }
+    },
+    {
+      "team": {
+        "team_id": "team_gamma",
+        "team_name": "Team Gamma",
+        "members": ["diana@example.com", "eve@example.com"]
+      },
+      "agent_type": "purple",
+      "agent_url": "https://team-gamma-purple.example.com",
+      "agent_name": "Gamma Guardian",
+      "metadata": {
+        "submission_time": "2024-01-15T12:00:00Z"
+      }
+    }
+  ],
+  "scenarios": [
+    "scenarios/security/scenario_security_dpi.toml",
+    "scenarios/security/scenario_security_ipi.toml",
+    "scenarios/security/scenario_safety_dpi.toml",
+    "scenarios/security/scenario_safety_ipi.toml"
+  ],
+  "allow_self_evaluation": false,
+  "public_green_agents": [
+    "team_alpha",
+    "team_beta"
+  ],
+  "private_green_agents": [
+    "team_alpha",
+    "team_beta",
+    "organizer_holdout_1"
+  ],
+  "results_dir": "./hackathon_results",
+  "timeout_per_evaluation": 600,
+  "max_concurrent_evaluations": 3
+}

@@ -4,3 +4,6 @@
 .venv/
 __pycache__/
 *.pyc
+
+# Evaluation results
+results/
