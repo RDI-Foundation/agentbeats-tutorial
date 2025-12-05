@@ -1,0 +1,14 @@
+[green_agent]
+endpoint = "http://127.0.0.1:9009"
+cmd = "python scenarios/tau2/tau2_evaluator.py --host 127.0.0.1 --port 9009"
+
+[[participants]]
+role = "agent"
+endpoint = "http://127.0.0.1:9019"
+cmd = "python scenarios/tau2/tau2_agent.py --host 127.0.0.1 --port 9019"
+
+[config]
+domain = "airline"
+num_tasks = 10
+max_steps = 200
+user_llm = "openai/gpt-4o"

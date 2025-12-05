@@ -1,0 +1,35 @@
+FROM ghcr.io/astral-sh/uv:python3.12-trixie
+
+RUN adduser agentbeats
+USER agentbeats
+RUN mkdir -p /home/agentbeats/.cache/uv
+WORKDIR /home/agentbeats/tutorial
+
+COPY pyproject.toml uv.lock README.md ./
+COPY src src
+
+RUN \
+    --mount=type=cache,target=/home/agentbeats/.cache/uv,uid=1000 \
+    uv sync --locked
+
+# Install tau2 from GitHub (not on PyPI)
+RUN \
+    --mount=type=cache,target=/home/agentbeats/.cache/uv,uid=1000 \
+    uv pip install "tau2 @ git+https://github.com/sierra-research/tau2-bench.git"
+
+# Download tau2 data
+USER root
+RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
+USER agentbeats
+
+RUN git clone --depth 1 --filter=blob:none --sparse https://github.com/sierra-research/tau2-bench.git /home/agentbeats/tau2-bench && \
+    cd /home/agentbeats/tau2-bench && \
+    git sparse-checkout set data
+
+ENV TAU2_DATA_DIR=/home/agentbeats/tau2-bench/data
+
+COPY scenarios scenarios
+
+ENTRYPOINT ["uv", "run", "scenarios/tau2/tau2_evaluator.py"]
+CMD ["--host", "0.0.0.0"]
+EXPOSE 9009
