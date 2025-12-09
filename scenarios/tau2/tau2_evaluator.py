@@ -14,7 +14,6 @@ import logging
 import time
 from typing import Any, Optional
 
-import gymnasium as gym
 import uvicorn
 from dotenv import load_dotenv
 
@@ -40,16 +39,14 @@ from agentbeats.tool_provider import ToolProvider
 
 from tau2.data_model.simulation import RewardInfo
 from tau2.environment.tool import Tool
-from tau2.gym import TAU_BENCH_ENV_ID, register_gym_agent
 from tau2.run import get_tasks
+
+from tau2_env import Tau2Environment, Tau2Action
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("tau2_evaluator")
 
 RESPOND_ACTION_NAME = "respond"
-
-# Register tau-bench gym environments
-register_gym_agent()
 
 
 def tools_to_str(tools: list[Tool]) -> str:
@@ -93,19 +90,19 @@ class Tau2Evaluator(GreenAgent):
             return False, f"Missing config keys: {missing_config_keys}"
         return True, "ok"
 
-    async def run_eval(self, req: EvalRequest, updater: TaskUpdater) -> None:
-        logger.info(f"Starting tau2 evaluation: {req}")
+    async def run_eval(self, request: EvalRequest, updater: TaskUpdater) -> None:
+        logger.info(f"Starting tau2 evaluation: {request}")
         start_time = time.time()
 
-        domain = req.config["domain"]
-        task_ids = req.config.get("task_ids", None)
-        num_tasks = req.config.get("num_tasks", None)
-        max_steps = req.config.get("max_steps", 200)
-        user_llm = req.config.get("user_llm", "openai/gpt-4o")
-        user_llm_args = req.config.get("user_llm_args", {"temperature": 0.0})
+        domain = request.config["domain"]
+        task_ids = request.config.get("task_ids", None)
+        num_tasks = request.config.get("num_tasks", None)
+        max_steps = request.config.get("max_steps", 200)
+        user_llm = request.config.get("user_llm", "openai/gpt-4o")
+        user_llm_args = request.config.get("user_llm_args", {"temperature": 0.0})
 
         # Get the purple agent URL
-        agent_url = str(req.participants["agent"])
+        agent_url = str(request.participants["agent"])
 
         # Get task IDs
         resolved_task_ids = get_task_ids(domain, task_ids, num_tasks)
@@ -146,7 +143,7 @@ class Tau2Evaluator(GreenAgent):
             num_completed = len(metrics["tasks"])
             pass_rate = (total_reward / num_completed * 100) if num_completed > 0 else 0
 
-            result_data = {
+            result_data: dict[str, Any] = {
                 "domain": domain,
                 "score": total_reward,
                 "max_score": num_completed,
@@ -188,35 +185,34 @@ Task Results:
         task_id: str,
         max_steps: int,
         user_llm: str,
-        user_llm_args: dict,
+        user_llm_args: dict[Any, Any],
     ) -> float:
         """Run a single tau-bench task and return the reward."""
 
-        env = gym.make(
-            TAU_BENCH_ENV_ID,
+        env = Tau2Environment(
             domain=domain,
             task_id=task_id,
-            max_steps=max_steps,
-            user_llm=user_llm,
-            user_llm_args=user_llm_args,
-            all_messages_as_observation=False,
+            env_args={
+                "max_steps": max_steps,
+                "user_llm": user_llm,
+                "user_llm_args": user_llm_args,
+            },
         )
 
-        terminated = False
-        observation, info = env.reset()
+        observation = env.reset()
 
         # Build the initial task description for the purple agent
-        task_description = self._build_task_prompt(info, observation)
+        task_description = self._build_task_prompt(env.state.info, observation.observation)
 
         # Start a new conversation with the purple agent
         next_message = task_description
         is_first_message = True
 
-        while not terminated:
+        while not observation.done:
             logger.debug(f"Sending to purple agent: {next_message[:200]}...")
 
             # Send message to purple agent
-            response = await self._tool_provider.talk_to_agent(
+            response: str = await self._tool_provider.talk_to_agent(
                 message=next_message,
                 url=agent_url,
                 new_conversation=is_first_message,
@@ -227,28 +223,28 @@ Task Results:
 
             # Parse the purple agent's action
             try:
-                action = self._parse_agent_response(response)
+                action = Tau2Action(action=self._parse_agent_response(response))
             except Exception as e:
                 logger.error(f"Failed to parse agent response: {e}")
                 # When parsing fails, respond with error as plain text (not a tool call)
-                action = "I encountered an error processing the request."
+                action = Tau2Action(action="I encountered an error processing the request.")
 
             # Step the environment with either a JSON string (tool call) or plain text (user response)
-            observation, reward, terminated, truncated, info = env.step(action)
-            logger.debug(f"Environment step: reward={reward}, terminated={terminated}")
+            observation = env.step(action)
+            logger.debug(f"Environment step: reward={observation.reward}, done={observation.done}")
 
-            if terminated:
+            if observation.done:
                 break
 
-            next_message = observation
+            next_message = observation.observation
 
         # Extract final reward
-        if info.get("reward_info"):
-            reward_info = RewardInfo.model_validate_json(info["reward_info"])
+        if env.state.info.get("reward_info"):
+            reward_info = RewardInfo.model_validate_json(env.state.info["reward_info"])
             return reward_info.reward
-        return float(reward)
+        return 0. if observation.reward is None else float(observation.reward)
 
-    def _build_task_prompt(self, info: dict, observation: str) -> str:
+    def _build_task_prompt(self, info: dict[Any, Any], observation: str) -> str:
         """Build the initial task prompt for the purple agent."""
         return f"""
 {info["policy"]}
