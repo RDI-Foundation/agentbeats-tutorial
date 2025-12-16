@@ -4,12 +4,54 @@ import os, sys, time, subprocess, shlex, signal
 from pathlib import Path
 import tomllib
 import httpx
-from dotenv import load_dotenv
+from dotenv import find_dotenv, load_dotenv
 
 from a2a.client import A2ACardResolver
 
 
-load_dotenv(override=True)
+dotenv_path = find_dotenv()
+if dotenv_path:
+    load_dotenv(dotenv_path, override=True)
+
+
+async def wait_for_environments(cfg: dict, timeout: int = 30) -> bool:
+    """Wait for all environments to be healthy and responding."""
+    endpoints = []
+
+    # Collect environment endpoints to check
+    for e in cfg.get("environments", []):
+        if e.get("image"):  # Only check if there's an image (container to start)
+            endpoints.append(f"http://{e['host']}:{e['port']}")
+
+    if not endpoints:
+        return True  # No environments to wait for
+
+    print(f"Waiting for {len(endpoints)} environment(s) to be ready...")
+    start_time = time.time()
+
+    async def check_endpoint(endpoint: str) -> bool:
+        """Check if an environment server is responding via /health endpoint."""
+        try:
+            async with httpx.AsyncClient(timeout=2) as client:
+                response = await client.get(f"{endpoint}/health")
+                return response.status_code == 200
+        except Exception:
+            return False
+
+    while time.time() - start_time < timeout:
+        ready_count = 0
+        for endpoint in endpoints:
+            if await check_endpoint(endpoint):
+                ready_count += 1
+
+        if ready_count == len(endpoints):
+            return True
+
+        print(f"  {ready_count}/{len(endpoints)} environments ready, waiting...")
+        await asyncio.sleep(1)
+
+    print(f"Timeout: Only {ready_count}/{len(endpoints)} environments became ready after {timeout}s")
+    return False
 
 
 async def wait_for_agents(cfg: dict, timeout: int = 30) -> bool:
@@ -87,8 +129,22 @@ def parse_toml(scenario_path: str) -> dict:
                 "cmd": p.get("cmd", "")
             })
 
+    envs = []
+    for e in data.get("environments", []):
+        if isinstance(e, dict) and "endpoint" in e:
+            h, pt = host_port(e["endpoint"])
+            envs.append({
+                "name": str(e.get("name", "")),
+                "host": h,
+                "port": pt,
+                "image": e.get("image", ""),
+                "publishes": e.get("publishes", []),
+                "env": e.get("env", {}),
+            })
+
     cfg = data.get("config", {})
     return {
+        "environments": envs,
         "green_agent": {"host": g_host, "port": g_port, "cmd": green_cmd},
         "participants": parts,
         "config": cfg,
@@ -112,7 +168,38 @@ def main():
     base_env["PATH"] = parent_bin + os.pathsep + base_env.get("PATH", "")
 
     procs = []
+    containers = []
     try:
+        # start environments
+        for e in cfg.get("environments", []):
+            if e.get("image", ""):
+                container_name = f"agentbeats-{e['name']}-{int(time.time())}"
+                cmd_args = [
+                    "docker", "run",
+                    "--rm",
+                    "--name", container_name,
+                ]
+                for publish in e["publishes"]:
+                    cmd_args.extend(["-p", publish])
+                if dotenv_path:
+                    cmd_args.extend(["--env-file", dotenv_path])
+                for key, value in e["env"].items():
+                    cmd_args.extend(["-e", f"{key}={value}"])
+                cmd_args.append(e["image"])
+                print(f"Starting environment {e['name']} at {e['host']}:{e['port']} (container: {container_name})")
+                procs.append(subprocess.Popen(
+                    cmd_args,
+                    stdout=sink, stderr=sink,
+                    text=True,
+                    start_new_session=True,
+                ))
+                containers.append(container_name)
+
+        # Wait for all environments to be ready
+        if not asyncio.run(wait_for_environments(cfg)):
+            print("Error: Not all environments became ready. Exiting.")
+            return
+
         # start participant agents
         for p in cfg["participants"]:
             cmd_args = shlex.split(p.get("cmd", ""))
@@ -148,7 +235,7 @@ def main():
             while True:
                 for proc in procs:
                     if proc.poll() is not None:
-                        print(f"Agent exited with code {proc.returncode}")
+                        print(f"Process exited with code {proc.returncode}")
                         break
                     time.sleep(0.5)
         else:
@@ -165,6 +252,14 @@ def main():
 
     finally:
         print("\nShutting down...")
+        for c in containers:
+            try:
+                subprocess.run(
+                    ["docker", "stop", c],
+                    stdout=sink, stderr=sink,
+                )
+            except Exception as e:
+                print(f"Error in docker stop {c}: {e}")
         for p in procs:
             if p.poll() is None:
                 try:

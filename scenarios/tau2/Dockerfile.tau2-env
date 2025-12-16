@@ -1,0 +1,30 @@
+# https://github.com/meta-pytorch/OpenEnv/blob/fb169f8c660df722f538160b3ce636de3312a756/src/envs/README.md
+
+# Accept base image as build argument for CI/CD flexibility
+ARG BASE_IMAGE=openenv-base:latest
+FROM ${BASE_IMAGE}
+
+# Install dependencies
+COPY scenarios/tau2/requirements.txt /tmp/requirements.txt
+RUN \
+    apt-get update && \
+    apt-get install -y git && \
+    pip install --no-cache-dir -r /tmp/requirements.txt && rm /tmp/requirements.txt
+
+# Download tau2 data
+RUN git clone --depth 1 --filter=blob:none --sparse https://github.com/sierra-research/tau2-bench.git /app/scenarios/tau2/tau2-bench && \
+    cd /app/scenarios/tau2/tau2-bench && \
+    git sparse-checkout set data
+
+ENV TAU2_DATA_DIR=/app/scenarios/tau2/tau2-bench/data
+
+# Copy environment code
+COPY scenarios/tau2/ /app/scenarios/tau2/
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Run server
+# https://github.com/meta-pytorch/OpenEnv/issues/244
+CMD ["python", "-m", "uvicorn", "tau2_server:app", "--host", "0.0.0.0", "--port", "8000", "--app-dir", "scenarios/tau2"]

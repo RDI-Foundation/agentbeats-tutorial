@@ -11,7 +11,7 @@ RUN \
     --mount=type=cache,target=/home/agentbeats/.cache/uv,uid=1000 \
     uv sync --locked
 
-COPY scenarios scenarios
+COPY scenarios/debate scenarios/debate
 
 ENTRYPOINT ["uv", "run", "scenarios/debate/debate_judge.py"]
 CMD ["--host", "0.0.0.0"]

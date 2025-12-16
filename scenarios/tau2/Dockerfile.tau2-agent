@@ -12,7 +12,7 @@ RUN \
     --mount=type=cache,target=/home/agentbeats/.cache/uv,uid=1000 \
     uv sync --locked
 
-COPY scenarios scenarios
+COPY scenarios/tau2 scenarios/tau2
 
 ENTRYPOINT ["uv", "run", "scenarios/tau2/tau2_agent.py"]
 CMD ["--host", "0.0.0.0"]

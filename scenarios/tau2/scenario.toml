@@ -7,6 +7,16 @@ role = "agent"
 endpoint = "http://127.0.0.1:9019"
 cmd = "python scenarios/tau2/tau2_agent.py --host 127.0.0.1 --port 9019"
 
+[[environments]]
+name = "tau2"
+endpoint = "http://127.0.0.1:8000"
+image = "tau2-env:latest"
+publishes = ["127.0.0.1:8000:8000"]
+[environments.env]
+TAU2_DOMAIN = "airline"
+TAU2_TASK_ID = "0"
+TAU2_ENV_ARGS_JSON = "{}"
+
 [config]
 domain = "airline"
 num_tasks = 3
