@@ -1,0 +1,17 @@
+name: Run Assessment
+
+on:
+  push:
+    paths:
+      - 'scenario.toml'
+  workflow_dispatch:
+
+jobs:
+  evaluate:
+    uses: RDI-Foundation/agentbeats-leaderboard-template/.github/workflows/runner.yml@main
+    with:
+      leaderboard_repo: 'RDI-Foundation/agentbeats-leaderboard-template'
+      scenario_file: 'scenario.toml'
+    secrets:
+      GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
