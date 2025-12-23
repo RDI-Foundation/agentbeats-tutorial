@@ -9,16 +9,22 @@ description = "Agentbeats Tutorial"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "a2a-sdk>=0.3.5",
-    "google-adk>=1.14.1",
-    "google-genai>=1.36.0",
-    "litellm>=1.0.0",
-    "loguru>=0.7.0",
-    "nest-asyncio>=1.6.0",
+    "a2a-sdk[http-server]>=0.3.20",
+    "httpx>=0.28.1",
     "pydantic>=2.11.9",
     "python-dotenv>=1.1.1",
-    "uvicorn>=0.35.0",
-    # tau2 from GitHub
+    "uvicorn>=0.38.0",
+]
+
+[project.optional-dependencies]
+debate = [
+    "google-genai>=1.36.0",
+]
+tau2-agent = [
+    "litellm>=1.0.0",
+]
+tau2-evaluator = [
+    "nest-asyncio>=1.6.0",
     "tau2 @ git+https://github.com/sierra-research/tau2-bench.git",
 ]
 

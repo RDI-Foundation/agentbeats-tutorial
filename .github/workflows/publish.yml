@@ -16,8 +16,6 @@ jobs:
       matrix:
         include:
           # Update this to build your own agent images.
-          - name: adk-debate-judge
-            dockerfile: scenarios/debate/Dockerfile.adk-debate-judge
           - name: debate-judge
             dockerfile: scenarios/debate/Dockerfile.debate-judge
           - name: debater

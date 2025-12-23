@@ -90,9 +90,11 @@ async def main():
     req, green_url, role_to_id = parse_toml(data)
 
     artifacts: list[Artifact] = []
+    error_status: str | None = None
 
     async def event_consumer(event, card: AgentCard):
         nonlocal artifacts
+        nonlocal error_status
         match event:
             case Message() as msg:
                 print_parts(msg.parts)
@@ -105,8 +107,7 @@ async def main():
                     print(task.artifacts)
                     artifacts = task.artifacts
                 elif status.state.value not in ["submitted", "working"]:
-                    print(f"Agent returned status {status.state.value}. Exiting.")
-                    exit(1)
+                    error_status = status.state.value
 
             case (task, TaskArtifactUpdateEvent() as artifact_event):
                 print_parts(artifact_event.artifact.parts, "Artifact update")
@@ -119,8 +120,7 @@ async def main():
                     print(task.artifacts)
                     artifacts = task.artifacts
                 elif status.state.value not in ["submitted", "working"]:
-                    print(f"Agent returned status {status.state.value}. Exiting.")
-                    exit(1)
+                    error_status = status.state.value
 
             case _:
                 print("Unhandled event")
@@ -143,6 +143,10 @@ async def main():
         with open(output_path, "w") as f:
             json.dump(output_data, f, indent=2)
             print(f"Results written to {output_path}")
+
+    if error_status:
+        print(f"Agent returned status {error_status}.")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

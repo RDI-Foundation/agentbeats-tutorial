@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+import socket
 import os, sys, time, subprocess, shlex, signal
 from pathlib import Path
 import tomllib
@@ -10,6 +11,40 @@ from a2a.client import A2ACardResolver
 
 
 load_dotenv(override=True)
+
+
+def _connect_host(host: str) -> str:
+    if host == "0.0.0.0":
+        return "127.0.0.1"
+    if host == "::":
+        return "::1"
+    return host
+
+
+def _endpoint_is_listening(host: str, port: int) -> bool:
+    try:
+        with socket.create_connection((_connect_host(host), port), timeout=0.2):
+            return True
+    except OSError:
+        return False
+
+
+def ensure_endpoints_unused(cfg: dict) -> None:
+    conflicts: list[str] = []
+
+    for p in cfg["participants"]:
+        if p.get("cmd") and _endpoint_is_listening(p["host"], p["port"]):
+            conflicts.append(f"{p['role']} ({p['host']}:{p['port']})")
+
+    if cfg["green_agent"].get("cmd") and _endpoint_is_listening(cfg["green_agent"]["host"], cfg["green_agent"]["port"]):
+        conflicts.append(f"green_agent ({cfg['green_agent']['host']}:{cfg['green_agent']['port']})")
+
+    if conflicts:
+        print("Error: Some agent endpoints are already in use:")
+        for conflict in conflicts:
+            print(f"  - {conflict}")
+        print("Pick different ports in the scenario TOML (both endpoint and cmd) or stop the process using them.")
+        sys.exit(1)
 
 
 async def wait_for_agents(cfg: dict, timeout: int = 30) -> bool:
@@ -113,6 +148,8 @@ def main():
 
     procs = []
     try:
+        ensure_endpoints_unused(cfg)
+
         # start participant agents
         for p in cfg["participants"]:
             cmd_args = shlex.split(p.get("cmd", ""))
@@ -141,7 +178,7 @@ def main():
         # Wait for all agents to be ready
         if not asyncio.run(wait_for_agents(cfg)):
             print("Error: Not all agents became ready. Exiting.")
-            return
+            sys.exit(1)
 
         print("Agents started. Press Ctrl+C to stop.")
         if args.serve_only:
@@ -152,6 +189,7 @@ def main():
                         break
                     time.sleep(0.5)
         else:
+            time.sleep(1.0)
             client_proc = subprocess.Popen(
                 [sys.executable, "-m", "agentbeats.client_cli", args.scenario],
                 env=base_env,
@@ -159,6 +197,8 @@ def main():
             )
             procs.append(client_proc)
             client_proc.wait()
+            if client_proc.returncode:
+                sys.exit(client_proc.returncode)
 
     except KeyboardInterrupt:
         pass

@@ -1,4 +1,8 @@
-FROM ghcr.io/astral-sh/uv:python3.12-trixie
+FROM ghcr.io/astral-sh/uv:python3.13-bookworm
+
+ENV UV_HTTP_TIMEOUT=300
+
+RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
 
 RUN adduser agentbeats
 USER agentbeats
@@ -10,11 +14,7 @@ COPY src src
 
 RUN \
     --mount=type=cache,target=/home/agentbeats/.cache/uv,uid=1000 \
-    uv sync --locked
-
-USER root
-RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
-USER agentbeats
+    uv sync --locked --no-dev --no-install-project --extra tau2-evaluator
 
 # Download tau2 data
 RUN git clone --depth 1 --filter=blob:none --sparse https://github.com/sierra-research/tau2-bench.git /home/agentbeats/tau2-bench && \
@@ -25,6 +25,6 @@ ENV TAU2_DATA_DIR=/home/agentbeats/tau2-bench/data
 
 COPY scenarios scenarios
 
-ENTRYPOINT ["uv", "run", "scenarios/tau2/tau2_evaluator.py"]
+ENTRYPOINT ["uv", "run", "scenarios/tau2/evaluator/src/server.py"]
 CMD ["--host", "0.0.0.0"]
 EXPOSE 9009

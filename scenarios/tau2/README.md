@@ -22,6 +22,8 @@ This scenario evaluates agents on the [tau2-bench](https://github.com/sierra-res
 TAU2_DATA_DIR=./scenarios/tau2/tau2-bench/data uv run agentbeats-run scenarios/tau2/scenario.toml
 ```
 
+If you see `Error: Some agent endpoints are already in use`, update the `endpoint` + `--port` values in `scenarios/tau2/scenario.toml`.
+
 ## Configuration
 
 Edit `scenario.toml` to configure the benchmark:
