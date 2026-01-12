@@ -2,7 +2,7 @@ import sys
 import json
 import asyncio
 from pathlib import Path
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import urlparse
 
 import tomllib
 
@@ -18,35 +18,22 @@ from a2a.types import (
     DataPart,
 )
 
-def _normalize_endpoint(endpoint: str) -> str:
+def _validate_endpoint(endpoint: str) -> None:
     parsed = urlparse(endpoint)
     host = parsed.hostname
-    if host == "0.0.0.0":
-        connect_host = "127.0.0.1"
-    elif host == "::":
-        connect_host = "::1"
-    else:
-        return endpoint
-
-    port = f":{parsed.port}" if parsed.port else ""
-    userinfo = ""
-    if parsed.username:
-        userinfo = parsed.username
-        if parsed.password:
-            userinfo += f":{parsed.password}"
-        userinfo += "@"
-    if ":" in connect_host and not connect_host.startswith("["):
-        connect_host = f"[{connect_host}]"
-
-    netloc = f"{userinfo}{connect_host}{port}"
-    return urlunparse(parsed._replace(netloc=netloc))
+    port = parsed.port
+    if not host or port is None:
+        raise ValueError(f"Invalid endpoint: {endpoint!r}")
+    if host in {"0.0.0.0", "::"}:
+        raise ValueError("Endpoint host must be a connectable address (use 127.0.0.1 or ::1).")
 
 
 def parse_toml(d: dict[str, object]) -> tuple[EvalRequest, str, dict[str, str]]:
     green = d.get("green_agent")
     if not isinstance(green, dict) or "endpoint" not in green:
         raise ValueError("green.endpoint is required in TOML")
-    green_endpoint: str = _normalize_endpoint(green["endpoint"])
+    green_endpoint: str = green["endpoint"]
+    _validate_endpoint(green_endpoint)
 
     parts: dict[str, str] = {}
     role_to_id: dict[str, str] = {}
@@ -57,7 +44,8 @@ def parse_toml(d: dict[str, object]) -> tuple[EvalRequest, str, dict[str, str]]:
             endpoint = p.get("endpoint")
             agentbeats_id = p.get("agentbeats_id")
             if role and endpoint:
-                parts[role] = _normalize_endpoint(endpoint)
+                _validate_endpoint(endpoint)
+                parts[role] = endpoint
             if role and agentbeats_id:
                 role_to_id[role] = agentbeats_id
 
@@ -111,7 +99,11 @@ async def main():
     toml_data = scenario_path.read_text()
     data = tomllib.loads(toml_data)
 
-    req, green_url, role_to_id = parse_toml(data)
+    try:
+        req, green_url, role_to_id = parse_toml(data)
+    except ValueError as exc:
+        print(f"Error: {exc}")
+        sys.exit(1)
 
     artifacts: list[Artifact] = []
     error_status: str | None = None
@@ -150,23 +142,24 @@ async def main():
                 print("Unhandled event")
 
     msg = req.model_dump_json()
-    await send_message(msg, green_url, streaming=True, consumer=event_consumer)
+    try:
+        await send_message(msg, green_url, streaming=True, consumer=event_consumer)
+    finally:
+        if output_path:
+            all_data_parts = []
+            for artifact in artifacts:
+                _, data_parts = parse_parts(artifact.parts)
+                all_data_parts.extend(data_parts)
 
-    if output_path:
-        all_data_parts = []
-        for artifact in artifacts:
-            _, data_parts = parse_parts(artifact.parts)
-            all_data_parts.extend(data_parts)
+            output_data = {
+                "participants": role_to_id,
+                "results": all_data_parts
+            }
 
-        output_data = {
-            "participants": role_to_id,
-            "results": all_data_parts
-        }
-
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(output_path, "w") as f:
-            json.dump(output_data, f, indent=2)
-            print(f"Results written to {output_path}")
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(output_path, "w") as f:
+                json.dump(output_data, f, indent=2)
+                print(f"Results written to {output_path}")
 
     if error_status:
         print(f"Agent returned status {error_status}.")

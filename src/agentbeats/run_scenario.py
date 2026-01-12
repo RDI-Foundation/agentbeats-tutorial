@@ -3,6 +3,7 @@ import asyncio
 import socket
 import os, sys, time, subprocess, shlex, signal
 from pathlib import Path
+from urllib.parse import urlparse
 import tomllib
 import httpx
 from dotenv import load_dotenv
@@ -13,17 +14,9 @@ from a2a.client import A2ACardResolver
 load_dotenv(override=True)
 
 
-def _connect_host(host: str) -> str:
-    if host == "0.0.0.0":
-        return "127.0.0.1"
-    if host == "::":
-        return "::1"
-    return host
-
-
 def _endpoint_is_listening(host: str, port: int) -> bool:
     try:
-        with socket.create_connection((_connect_host(host), port), timeout=0.2):
+        with socket.create_connection((host, port), timeout=0.2):
             return True
     except OSError:
         return False
@@ -54,12 +47,10 @@ async def wait_for_agents(cfg: dict, timeout: int = 30) -> bool:
     # Collect all endpoints to check
     for p in cfg["participants"]:
         if p.get("cmd"):  # Only check if there's a command (agent to start)
-            host = _connect_host(p["host"])
-            endpoints.append(f"http://{host}:{p['port']}")
+            endpoints.append(f"http://{p['host']}:{p['port']}")
 
     if cfg["green_agent"].get("cmd"):  # Only check if there's a command (host to start)
-        host = _connect_host(cfg["green_agent"]["host"])
-        endpoints.append(f"http://{host}:{cfg['green_agent']['port']}")
+        endpoints.append(f"http://{cfg['green_agent']['host']}:{cfg['green_agent']['port']}")
 
     if not endpoints:
         return True  # No agents to wait for
@@ -102,21 +93,29 @@ def parse_toml(scenario_path: str) -> dict:
 
     data = tomllib.loads(path.read_text())
 
-    def host_port(ep: str):
-        s = (ep or "")
-        s = s.replace("http://", "").replace("https://", "")
-        s = s.split("/", 1)[0]
-        host, port = s.split(":", 1)
-        return host, int(port)
+    def parse_endpoint(ep: str) -> tuple[str, int]:
+        parsed = urlparse(ep or "")
+        host = parsed.hostname
+        port = parsed.port
+        if not host or port is None:
+            print(f"Error: Invalid endpoint in scenario TOML: {ep!r}")
+            sys.exit(1)
+        if host in {"0.0.0.0", "::"}:
+            print("Error: Endpoint host must be a connectable address (use 127.0.0.1 or ::1).")
+            sys.exit(1)
+        return host, port
 
-    green_ep = data.get("green_agent", {}).get("endpoint", "")
-    g_host, g_port = host_port(green_ep)
+    green_ep = data.get("green_agent", {}).get("endpoint")
+    if not green_ep:
+        print("Error: green_agent.endpoint is required in scenario TOML.")
+        sys.exit(1)
+    g_host, g_port = parse_endpoint(green_ep)
     green_cmd = data.get("green_agent", {}).get("cmd", "")
 
     parts = []
     for p in data.get("participants", []):
         if isinstance(p, dict) and "endpoint" in p:
-            h, pt = host_port(p["endpoint"])
+            h, pt = parse_endpoint(p["endpoint"])
             parts.append({
                 "role": str(p.get("role", "")),
                 "host": h,
