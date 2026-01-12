@@ -1,5 +1,8 @@
 import argparse
+import os
+from pathlib import Path
 
+from dotenv import load_dotenv
 import uvicorn
 from a2a.server.apps import A2AStarletteApplication
 from a2a.server.request_handlers import DefaultRequestHandler
@@ -10,10 +13,29 @@ from a2a.types import (
     AgentSkill,
 )
 
-from executor import Executor
+
+def _default_tau2_data_dir() -> Path:
+    tau2_dir = Path(__file__).resolve().parents[2]
+    return tau2_dir / "tau2-bench" / "data"
+
+
+def _ensure_tau2_data_dir() -> None:
+    if os.environ.get("TAU2_DATA_DIR"):
+        return
+
+    default_dir = _default_tau2_data_dir()
+    if default_dir.exists():
+        os.environ["TAU2_DATA_DIR"] = str(default_dir)
+        print(f"TAU2_DATA_DIR not set; defaulting to {default_dir}")
+
 
 
 def main():
+    load_dotenv()
+    _ensure_tau2_data_dir()
+
+    from executor import Executor
+
     parser = argparse.ArgumentParser(description="Run the tau2 evaluator (green agent).")
     parser.add_argument("--host", type=str, default="127.0.0.1", help="Host to bind the server")
     parser.add_argument("--port", type=int, default=9009, help="Port to bind the server")
@@ -54,4 +76,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

@@ -6,7 +6,6 @@ import uuid
 from typing import Any
 
 import nest_asyncio
-from dotenv import load_dotenv
 from pydantic import BaseModel, HttpUrl, ValidationError
 
 from a2a.server.tasks import TaskUpdater
@@ -32,8 +31,6 @@ from tau2.registry import registry
 from tau2.run import get_tasks
 from tau2.user.user_simulator import UserSimulator
 
-
-load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("tau2_evaluator")

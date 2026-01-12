@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 import litellm
 
 from a2a.server.tasks import TaskUpdater
-from a2a.types import Message, Part, TaskState, TextPart
+from a2a.types import DataPart, Message, Part, TaskState
 from a2a.utils import get_message_text, new_agent_text_message
 
 
@@ -38,16 +38,17 @@ class Agent:
                 response_format={"type": "json_object"},
             )
             assistant_content = completion.choices[0].message.content or "{}"
-            json.loads(assistant_content)
+            assistant_json = json.loads(assistant_content)
         except Exception:
-            assistant_content = json.dumps(
-                {"name": "respond", "arguments": {"content": "I ran into an error processing your request."}}
-            )
+            assistant_json = {
+                "name": "respond",
+                "arguments": {"content": "I ran into an error processing your request."},
+            }
+            assistant_content = json.dumps(assistant_json)
 
         self.messages.append({"role": "assistant", "content": assistant_content})
 
         await updater.add_artifact(
-            parts=[Part(root=TextPart(text=assistant_content))],
+            parts=[Part(root=DataPart(data=assistant_json))],
             name="Action",
         )
-

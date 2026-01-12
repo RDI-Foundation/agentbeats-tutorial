@@ -54,10 +54,12 @@ async def wait_for_agents(cfg: dict, timeout: int = 30) -> bool:
     # Collect all endpoints to check
     for p in cfg["participants"]:
         if p.get("cmd"):  # Only check if there's a command (agent to start)
-            endpoints.append(f"http://{p['host']}:{p['port']}")
+            host = _connect_host(p["host"])
+            endpoints.append(f"http://{host}:{p['port']}")
 
     if cfg["green_agent"].get("cmd"):  # Only check if there's a command (host to start)
-        endpoints.append(f"http://{cfg['green_agent']['host']}:{cfg['green_agent']['port']}")
+        host = _connect_host(cfg["green_agent"]["host"])
+        endpoints.append(f"http://{host}:{cfg['green_agent']['port']}")
 
     if not endpoints:
         return True  # No agents to wait for
@@ -189,7 +191,6 @@ def main():
                         break
                     time.sleep(0.5)
         else:
-            time.sleep(1.0)
             client_proc = subprocess.Popen(
                 [sys.executable, "-m", "agentbeats.client_cli", args.scenario],
                 env=base_env,
