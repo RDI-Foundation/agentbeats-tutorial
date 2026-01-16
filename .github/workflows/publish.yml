@@ -1,4 +1,4 @@
-name: Publish Agents
+name: Publish Images
 
 # Trigger this workflow when pushing main branch and tags
 on:
@@ -24,6 +24,8 @@ jobs:
             dockerfile: scenarios/tau2/Dockerfile.tau2-agent
           - name: tau2-evaluator
             dockerfile: scenarios/tau2/Dockerfile.tau2-evaluator
+          - name: agentbeats-client
+            dockerfile: Dockerfile.client_cli
 
     # These permissions are required for the workflow to:
     # - Read repository contents (checkout code)
