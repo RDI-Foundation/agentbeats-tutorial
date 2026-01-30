@@ -8,16 +8,25 @@ from dataclasses import dataclass
 
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
+from a2a.server.tasks import TaskUpdater
 from a2a.types import (
     AgentCapabilities,
     AgentCard,
     AgentSkill,
-    TaskStatus,
-    Message,
+    InvalidRequestError,
+    TaskState,
     TextPart,
     UnsupportedOperationError,
 )
+from a2a.utils import new_agent_text_message, new_task
 from a2a.utils.errors import ServerError
+
+TERMINAL_STATES = {
+    TaskState.completed,
+    TaskState.canceled,
+    TaskState.failed,
+    TaskState.rejected,
+}
 
 # You can use any LLM provider
 import openai
@@ -44,36 +53,51 @@ class ResearchAgent(AgentExecutor):
     ) -> None:
         """Process incoming research requests."""
         
-        # Extract the research question
         message = context.message
+        if not message:
+            raise ServerError(error=InvalidRequestError(message="Missing message in request"))
+
+        task = context.current_task
+        if task and task.status.state in TERMINAL_STATES:
+            raise ServerError(
+                error=InvalidRequestError(
+                    message=f"Task {task.id} already processed (state: {task.status.state})"
+                )
+            )
+
+        if not task:
+            task = new_task(message)
+            await event_queue.enqueue_event(task)
+
+        context_id = task.context_id
+        updater = TaskUpdater(event_queue, task.id, context_id)
+
+        # Extract the research question
         question = ""
         for part in message.parts:
-            if hasattr(part, 'text'):
-                question += part.text
-        
-        await event_queue.enqueue_event(
-            TaskStatus(state="working", message="Researching...")
+            if isinstance(part.root, TextPart):
+                question += part.root.text
+
+        await updater.start_work(
+            new_agent_text_message("Researching...", context_id=context_id, task_id=task.id)
         )
-        
+
         try:
             # Perform research using LLM
             response = await self._do_research(question)
             
             # Send response back
             await event_queue.enqueue_event(
-                Message(
-                    role="agent",
-                    parts=[TextPart(text=response)]
-                )
+                updater.new_agent_message([TextPart(text=response)])
             )
-            
-            await event_queue.enqueue_event(
-                TaskStatus(state="completed", message="Research complete!")
+
+            await updater.complete(
+                new_agent_text_message("Research complete!", context_id=context_id, task_id=task.id)
             )
-            
+
         except Exception as e:
-            await event_queue.enqueue_event(
-                TaskStatus(state="failed", message=f"Error: {str(e)}")
+            await updater.failed(
+                new_agent_text_message(f"Error: {str(e)}", context_id=context_id, task_id=task.id)
             )
     
     async def _do_research(self, question: str) -> str:

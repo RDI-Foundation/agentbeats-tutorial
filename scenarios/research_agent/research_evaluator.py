@@ -11,18 +11,28 @@ from datetime import datetime
 # Import A2A SDK components
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
+from a2a.server.tasks import TaskUpdater
 from a2a.types import (
     AgentCapabilities,
     AgentCard,
     AgentSkill,
-    TaskStatus,
-    Message,
+    InvalidRequestError,
+    Part,
     TextPart,
     DataPart,
+    TaskState,
     UnsupportedOperationError,
 )
-from a2a.client import A2AClient
+from agentbeats.client import send_message
+from a2a.utils import new_agent_text_message, new_task
 from a2a.utils.errors import ServerError
+
+TERMINAL_STATES = {
+    TaskState.completed,
+    TaskState.canceled,
+    TaskState.failed,
+    TaskState.rejected,
+}
 
 @dataclass
 class ResearchTask:
@@ -65,10 +75,29 @@ class ResearchEvaluator(AgentExecutor):
     ) -> None:
         """Main execution method called when assessment starts."""
         
+        message = context.message
+        if not message:
+            raise ServerError(error=InvalidRequestError(message="Missing message in request"))
+
+        task = context.current_task
+        if task and task.status.state in TERMINAL_STATES:
+            raise ServerError(
+                error=InvalidRequestError(
+                    message=f"Task {task.id} already processed (state: {task.status.state})"
+                )
+            )
+
+        if not task:
+            task = new_task(message)
+            await event_queue.enqueue_event(task)
+
+        context_id = task.context_id
+        updater = TaskUpdater(event_queue, task.id, context_id)
+
         # Get the assessment request from context
         request = {}
-        if context.message and context.message.parts:
-            part = context.message.parts[0].root
+        if message.parts:
+            part = message.parts[0].root
             if isinstance(part, DataPart):
                 request = part.data
             elif isinstance(part, TextPart):
@@ -76,12 +105,8 @@ class ResearchEvaluator(AgentExecutor):
         participants = request.get("participants", {})
         config = request.get("config", {})
         
-        # Update status
-        await event_queue.enqueue_event(
-            TaskStatus(
-                state="working",
-                message="Starting research evaluation..."
-            )
+        await updater.start_work(
+            new_agent_text_message("Starting research evaluation...", context_id=context_id, task_id=task.id)
         )
         
         results = []
@@ -90,7 +115,7 @@ class ResearchEvaluator(AgentExecutor):
         for role, endpoint in participants.items():
             if role == "researcher":  # Purple agent role
                 participant_results = await self._evaluate_participant(
-                    endpoint, event_queue
+                    endpoint, event_queue, updater, context_id, task.id
                 )
                 results.append({
                     "participant": role,
@@ -101,50 +126,39 @@ class ResearchEvaluator(AgentExecutor):
         final_results = self._calculate_final_scores(results)
         
         # Send results as artifact
-        await event_queue.enqueue_event(
-            Message(
-                role="agent",
-                parts=[DataPart(data=json.dumps(final_results))]
-            )
-        )
-        
-        await event_queue.enqueue_event(
-            TaskStatus(state="completed", message="Evaluation complete!")
+        await updater.add_artifact([Part(DataPart(data=final_results))])
+
+        await updater.complete(
+            new_agent_text_message("Evaluation complete!", context_id=context_id, task_id=task.id)
         )
     
     async def _evaluate_participant(
         self,
         endpoint: str,
-        event_queue: EventQueue
+        event_queue: EventQueue,
+        updater: TaskUpdater,
+        context_id: str,
+        task_id: str,
     ) -> dict:
         """Evaluate a single participant on all tasks."""
         
         scores = []
-        client = A2AClient(endpoint)
-        
         for task in self.tasks:
-            # Send task to participant
-            await event_queue.enqueue_event(
-                TaskStatus(
-                    state="working",
-                    message=f"Sending task: {task.topic[:50]}..."
-                )
+            await updater.update_status(
+                TaskState.working,
+                new_agent_text_message(
+                    f"Sending task: {task.topic[:50]}...",
+                    context_id=context_id,
+                    task_id=task_id,
+                ),
             )
-            
             try:
-                # Send the research request
-                response = await client.send_message(
-                    Message(
-                        role="user",
-                        parts=[TextPart(text=f"Research the following topic and provide a comprehensive answer with sources: {task.topic}")]
-                    ),
-                    timeout=task.time_limit_seconds
+                output = await send_message(
+                    f"Research the following topic and provide a comprehensive answer with sources: {task.topic}",
+                    endpoint,
                 )
-                
-                # Score the response
-                score = self._score_response(response, task)
+                score = self._score_response(output.get("response", ""), task)
                 scores.append(score)
-                
             except asyncio.TimeoutError:
                 scores.append({
                     "task": task.topic,
@@ -160,15 +174,12 @@ class ResearchEvaluator(AgentExecutor):
         
         return scores
     
-    def _score_response(self, response: Message, task: ResearchTask) -> dict:
+    def _score_response(self, response_text: str, task: ResearchTask) -> dict:
         """
         Score a response based on evaluation criteria.
         In a real implementation, this might use an LLM-as-judge approach.
         """
-        text = ""
-        for part in response.parts:
-            if hasattr(part, 'text'):
-                text += part.text
+        text = response_text or ""
         
         # Simple scoring logic (replace with LLM-based evaluation for production)
         score = 0
