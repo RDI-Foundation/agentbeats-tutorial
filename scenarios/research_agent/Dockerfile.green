@@ -8,15 +8,15 @@ WORKDIR /app
 RUN pip install uv
 
 # Copy requirements
-COPY pyproject.toml .
-COPY uv.lock .
+COPY scenarios/research_agent/pyproject.toml .
+COPY scenarios/research_agent/uv.lock .
 
 # Install dependencies
 RUN uv sync --frozen
 
 # Copy application code
-COPY research_evaluator.py .
-COPY server.py .
+COPY scenarios/research_agent/research_evaluator.py .
+COPY scenarios/research_agent/server.py .
 
 # Set the entrypoint
 ENTRYPOINT ["uv", "run", "python", "server.py"]

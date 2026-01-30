@@ -14,11 +14,12 @@ from a2a.types import (
     AgentCard,
     AgentSkill,
     InvalidRequestError,
+    Part,
     TaskState,
     TextPart,
     UnsupportedOperationError,
 )
-from a2a.utils import new_agent_text_message, new_task
+from a2a.utils import new_agent_parts_message, new_agent_text_message, new_task
 from a2a.utils.errors import ServerError
 
 TERMINAL_STATES = {
@@ -88,7 +89,11 @@ class ResearchAgent(AgentExecutor):
             
             # Send response back
             await event_queue.enqueue_event(
-                updater.new_agent_message([TextPart(text=response)])
+                new_agent_parts_message(
+                    [Part(TextPart(text=response))],
+                    context_id=context_id,
+                    task_id=task.id,
+                )
             )
 
             await updater.complete(
@@ -129,8 +134,8 @@ Format your response with clear sections and always mention sources."""
             max_tokens=1000,
             temperature=0.7
         )
-        
-        return response.choices[0].message.content
+        content = response.choices[0].message.content or ""
+        return content
 
     async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
         raise ServerError(error=UnsupportedOperationError())

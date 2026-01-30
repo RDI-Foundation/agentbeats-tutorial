@@ -5,12 +5,12 @@ WORKDIR /app
 
 RUN pip install uv
 
-COPY pyproject.toml .
-COPY uv.lock .
+COPY scenarios/research_agent/pyproject.toml .
+COPY scenarios/research_agent/uv.lock .
 
 RUN uv sync --frozen
 
-COPY research_agent.py .
-COPY purple_server.py .
+COPY scenarios/research_agent/research_agent.py .
+COPY scenarios/research_agent/purple_server.py .
 
 ENTRYPOINT ["uv", "run", "python", "purple_server.py"]
