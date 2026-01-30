@@ -6,14 +6,23 @@ This agent evaluates research capabilities of purple agents.
 import json
 import asyncio
 from dataclasses import dataclass
-from typing import Any
 from datetime import datetime
 
 # Import A2A SDK components
-from a2a.server.agent_execution import AgentExecutor
+from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
-from a2a.types import TaskStatus, Message, TextPart, DataPart
+from a2a.types import (
+    AgentCapabilities,
+    AgentCard,
+    AgentSkill,
+    TaskStatus,
+    Message,
+    TextPart,
+    DataPart,
+    UnsupportedOperationError,
+)
 from a2a.client import A2AClient
+from a2a.utils.errors import ServerError
 
 @dataclass
 class ResearchTask:
@@ -51,13 +60,19 @@ class ResearchEvaluator(AgentExecutor):
     
     async def execute(
         self,
-        context: Any,
+        context: RequestContext,
         event_queue: EventQueue
     ) -> None:
         """Main execution method called when assessment starts."""
         
         # Get the assessment request from context
-        request = context.message.parts[0].data
+        request = {}
+        if context.message and context.message.parts:
+            part = context.message.parts[0].root
+            if isinstance(part, DataPart):
+                request = part.data
+            elif isinstance(part, TextPart):
+                request = json.loads(part.text)
         participants = request.get("participants", {})
         config = request.get("config", {})
         
@@ -207,17 +222,27 @@ class ResearchEvaluator(AgentExecutor):
         
         return final
 
+    async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
+        raise ServerError(error=UnsupportedOperationError())
+
 
 # Server setup
-def create_agent_card():
+def create_agent_card(card_url: str) -> AgentCard:
     """Define the agent's capabilities."""
-    return {
-        "name": "Research Evaluator",
-        "description": "Evaluates AI agents' research and information synthesis capabilities",
-        "skills": [
-            {
-                "name": "research_evaluation",
-                "description": "Evaluates research quality, source citation, and comprehensiveness"
-            }
-        ]
-    }
+    skill = AgentSkill(
+        id="research_evaluation",
+        name="Research Evaluation",
+        description="Evaluates research quality, source citation, and comprehensiveness",
+        tags=["evaluation", "research"],
+        examples=["Evaluate research responses for accuracy, sources, and depth."],
+    )
+    return AgentCard(
+        name="Research Evaluator",
+        description="Evaluates AI agents' research and information synthesis capabilities",
+        url=card_url,
+        version="1.0.0",
+        default_input_modes=["text"],
+        default_output_modes=["text"],
+        capabilities=AgentCapabilities(streaming=True),
+        skills=[skill],
+    )
