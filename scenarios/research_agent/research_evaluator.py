@@ -79,12 +79,12 @@ async def _send_message(text: str, base_url: str) -> str:
         if isinstance(last_event, tuple):
             task, _update = last_event
             msg = task.status.message
-        output = _merge_parts(msg.parts) if msg else ""
+            output = _merge_parts(msg.parts) if msg else ""
             if task.artifacts:
                 for artifact in task.artifacts:
-                if output:
-                    output += "\n"
-                output += _merge_parts(artifact.parts)
+                    if output:
+                        output += "\n"
+                    output += _merge_parts(artifact.parts)
             return output
         return ""
 
