@@ -43,7 +43,7 @@ class ResearchAgent(AgentExecutor):
     """
     
     def __init__(self):
-        self.client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        self.client = openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         self.model = "gpt-4o-mini"  # Cost-effective model
     
     async def execute(
@@ -120,7 +120,7 @@ class ResearchAgent(AgentExecutor):
 
 Format your response with clear sections and always mention sources."""
 
-        response = self.client.chat.completions.create(
+        response = await self.client.chat.completions.create(
             model=self.model,
             messages=[
                 {"role": "system", "content": system_prompt},

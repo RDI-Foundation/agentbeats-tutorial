@@ -7,23 +7,31 @@ import json
 import asyncio
 from dataclasses import dataclass
 from datetime import datetime
+from uuid import uuid4
 
 # Import A2A SDK components
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
 from a2a.server.tasks import TaskUpdater
+from a2a.client import (
+    A2ACardResolver,
+    ClientConfig,
+    ClientFactory,
+)
 from a2a.types import (
     AgentCapabilities,
     AgentCard,
     AgentSkill,
     InvalidRequestError,
+    Message,
     Part,
     TextPart,
     DataPart,
     TaskState,
+    Role,
     UnsupportedOperationError,
 )
-from agentbeats.client import send_message
+import httpx
 from a2a.utils import new_agent_text_message, new_task
 from a2a.utils.errors import ServerError
 
@@ -33,6 +41,50 @@ TERMINAL_STATES = {
     TaskState.failed,
     TaskState.rejected,
 }
+
+DEFAULT_TIMEOUT = 300
+
+def _create_message(text: str) -> Message:
+    return Message(
+        kind="message",
+        role=Role.user,
+        parts=[Part(TextPart(kind="text", text=text))],
+        message_id=uuid4().hex,
+    )
+
+def _merge_parts(parts: list[Part]) -> str:
+    chunks = []
+    for part in parts:
+        if isinstance(part.root, TextPart):
+            chunks.append(part.root.text)
+        elif isinstance(part.root, DataPart):
+            chunks.append(json.dumps(part.root.data, indent=2))
+    return "\n".join(chunks)
+
+async def _send_message(text: str, base_url: str) -> str:
+    async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as httpx_client:
+        resolver = A2ACardResolver(httpx_client=httpx_client, base_url=base_url)
+        agent_card = await resolver.get_agent_card()
+        config = ClientConfig(
+            httpx_client=httpx_client,
+            streaming=False,
+        )
+        client = ClientFactory(config).create(agent_card)
+        outbound_msg = _create_message(text)
+        last_event = None
+        async for event in client.send_message(outbound_msg):
+            last_event = event
+        if isinstance(last_event, Message):
+            return _merge_parts(last_event.parts)
+        if isinstance(last_event, tuple):
+            task, _update = last_event
+            msg = task.status.message
+            output = _merge_parts(msg.parts) if msg else ""
+            if task.artifacts:
+                for artifact in task.artifacts:
+                    output += _merge_parts(artifact.parts)
+            return output
+        return ""
 
 @dataclass
 class ResearchTask:
@@ -153,11 +205,11 @@ class ResearchEvaluator(AgentExecutor):
                 ),
             )
             try:
-                output = await send_message(
+                output = await _send_message(
                     f"Research the following topic and provide a comprehensive answer with sources: {task.topic}",
                     endpoint,
                 )
-                score = self._score_response(output.get("response", ""), task)
+                score = self._score_response(output, task)
                 scores.append(score)
             except asyncio.TimeoutError:
                 scores.append({
