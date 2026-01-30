@@ -1,0 +1,16 @@
+# Dockerfile for Research Agent (Purple Agent)
+FROM python:3.11-slim
+
+WORKDIR /app
+
+RUN pip install uv
+
+COPY pyproject.toml .
+COPY uv.lock .
+
+RUN uv sync --frozen
+
+COPY research_agent.py .
+COPY purple_server.py .
+
+ENTRYPOINT ["uv", "run", "python", "purple_server.py"]

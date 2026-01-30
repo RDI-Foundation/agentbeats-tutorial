@@ -11,6 +11,7 @@ requires-python = ">=3.11"
 dependencies = [
     "a2a-sdk[http-server]>=0.3.20",
     "httpx>=0.28.1",
+    "openai>=2.9.0",
     "pydantic>=2.11.9",
     "python-dotenv>=1.1.1",
     "uvicorn>=0.38.0",

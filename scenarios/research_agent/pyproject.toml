@@ -1,0 +1,14 @@
+[project]
+name = "research-agent"
+version = "0.1.0"
+description = "Research agent for AgentBeats"
+requires-python = ">=3.11"
+dependencies = [
+    "openai>=1.0.0",
+    "a2a-sdk>=0.1.0",  # A2A protocol SDK
+    "httpx>=0.24.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
