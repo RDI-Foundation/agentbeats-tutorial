@@ -1,0 +1,15 @@
+# Scenario configuration for Research Agent Evaluation
+
+[green_agent]
+endpoint = "http://127.0.0.1:8000"
+cmd = "uv run python scenarios/research_agent/server.py --host 127.0.0.1 --port 8000"
+
+[[participants]]
+role = "researcher"
+endpoint = "http://127.0.0.1:8001"
+cmd = "uv run python scenarios/research_agent/purple_server.py --host 127.0.0.1 --port 8001"
+
+[config]
+# Custom configuration for your evaluation
+num_tasks = 2
+time_limit = 120
